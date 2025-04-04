@@ -1,0 +1,88 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ESP_Mail_Client.h>
+
+// Store Wi-Fi & SMTP credentials in Flash to save RAM
+struct Credentials {
+    const char* wifi_ssid;
+    const char* wifi_password;
+    const char* smtp_host;
+    uint16_t smtp_port;
+    const char* author_email;
+    const char* author_password;
+    const char* recipient_email;
+} creds PROGMEM = {
+    "SJAY-5G", "12345678",
+    "smtp.gmail.com", 465,
+    "sltmnitiot@gmail.com", "eeii qxas rmko fykd",
+    "sjaycreation1@gmail.com"
+};
+
+// Global SMTP session
+SMTPSession smtp;
+
+void connectWiFi();
+bool sendMail();
+void smtpCallback(SMTP_Status status);
+
+void setup() {
+    Serial.begin(115200);
+    connectWiFi();
+    sendMail();
+}
+
+void loop() {}
+
+void connectWiFi() {
+    Serial.print(F("Connecting to Wi-Fi"));
+    WiFi.begin(creds.wifi_ssid, creds.wifi_password);
+    while (WiFi.status() != WL_CONNECTED) {
+        Serial.print(F("."));
+        delay(300);
+    }
+    Serial.println(F("\nConnected to Wi-Fi"));
+}
+
+bool sendMail() {
+    MailClient.networkReconnect(true);
+    smtp.debug(0);  // Disable debug logs to save memory
+    smtp.callback(smtpCallback);
+
+    Session_Config config;
+    config.server.host_name = creds.smtp_host;
+    config.server.port = creds.smtp_port;
+    config.login.email = creds.author_email;
+    config.login.password = creds.author_password;
+    config.time.ntp_server = F("pool.ntp.org,time.nist.gov");
+    config.time.gmt_offset = 5.5;
+    config.time.day_light_offset = 0;
+
+    SMTP_Message message;
+    message.sender.name = F("ESP32");
+    message.sender.email = creds.author_email;
+    message.subject = F("ESP32 Test Email");
+    message.addRecipient(F("Sara"), creds.recipient_email);
+    message.text.content = F("Hello World! - Sent from ESP32 board");
+    message.text.charSet = "us-ascii";
+    message.priority = esp_mail_smtp_priority::esp_mail_smtp_priority_low;
+    message.response.notify = esp_mail_smtp_notify_success | esp_mail_smtp_notify_failure | esp_mail_smtp_notify_delay;
+
+    if (!smtp.connect(&config)) {
+        Serial.println(F("SMTP Connection Failed!"));
+        return false;
+    }
+    if (!smtp.isLoggedIn()) {
+        Serial.println(F("Not Logged In!"));
+        return false;
+    }
+    if (!MailClient.sendMail(&smtp, &message)) {
+        Serial.println(F("Failed to Send Email!"));
+        return false;
+    }
+    Serial.println(F("Email Sent Successfully!"));
+    return true;
+}
+
+void smtpCallback(SMTP_Status status) {
+    Serial.println(status.info());
+}
